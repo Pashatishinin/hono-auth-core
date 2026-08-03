@@ -1,5 +1,5 @@
 {
-  "name": "@pashatishinin/hono-auth-core",
+  "name": "hono-auth-core",
   "version": "0.1.0",
   "description": "OAuth2 (Google + generic) authentication core for Hono, with JWT session cookies",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "dist"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
