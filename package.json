@@ -1,0 +1,50 @@
+{
+  "name": "@pashatishinin/hono-auth-core",
+  "version": "0.1.0",
+  "description": "OAuth2 (Google + generic) authentication core for Hono, with JWT session cookies",
+  "license": "MIT",
+  "author": "Pavlo Tishynin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pashatishinin/hono-auth-core.git"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "hono": ">=4.0.0"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "hono": "^4.6.9",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=18"
+  }
+}
