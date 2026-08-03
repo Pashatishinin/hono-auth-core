@@ -7,22 +7,36 @@ generic OAuth2/OIDC provider factory, PKCE, and JWT session cookies. Runs on any
 ## Install
 
 This package is published to GitHub Packages under the `@pashatishinin` scope.
+GitHub Packages requires authentication even for public packages, so a token
+is needed to install it — but the token itself must never be committed
+anywhere (not in this README, not in `.npmrc`, not in git). Only an
+environment-variable placeholder is safe to check in.
 
-In the consuming project, add an `.npmrc`:
+1. Generate a **classic** Personal Access Token with the `read:packages`
+   scope: https://github.com/settings/tokens/new
+2. In the *consuming* project (not this repo), add an `.npmrc` with a
+   placeholder — safe to commit as-is:
 
-```
-@pashatishinin:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-```
+   ```
+   @pashatishinin:registry=https://npm.pkg.github.com
+   //npm.pkg.github.com/:_authToken=${GH_PACKAGES_TOKEN}
+   ```
+3. Export the real token locally (e.g. in `~/.zshrc`), never in the repo:
 
-`NODE_AUTH_TOKEN` must be a GitHub token (classic PAT or `GITHUB_TOKEN` in CI) with
-`read:packages` scope.
+   ```bash
+   export GH_PACKAGES_TOKEN=your_token_here
+   ```
+4. Install:
 
-```bash
-pnpm add @pashatishinin/hono-auth-core hono
-```
+   ```bash
+   pnpm add @pashatishinin/hono-auth-core hono
+   ```
 
 `hono` is a peer dependency.
+
+If install fails with `401`/`404`: confirm `echo $GH_PACKAGES_TOKEN` is set in
+the shell you're running `pnpm` from, that `.npmrc` sits at the project root,
+and that the token has the `read:packages` scope.
 
 ## Quick start
 
