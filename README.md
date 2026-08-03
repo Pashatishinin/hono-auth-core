@@ -1,0 +1,1 @@
+# hono-auth-core
