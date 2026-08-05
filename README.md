@@ -258,19 +258,6 @@ or the browser's address bar) and is handed back to both `beforeCreateUser` and 
 <a href="/auth/google/login?inviteCode=abc123&returnTo=/dashboard">Sign up with Google</a>
 ```
 
-## Publishing a new version
+## Contributing
 
-```bash
-pnpm version patch   # or minor / major
-git push --follow-tags
-```
-
-Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which typechecks, builds, and
-runs `pnpm publish` against npmjs.com, using the `NPM_TOKEN` repository secret.
-
-To publish manually:
-
-```bash
-pnpm build
-pnpm publish --no-git-checks
-```
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup and how to cut a release.
