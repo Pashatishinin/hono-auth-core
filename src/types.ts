@@ -79,13 +79,22 @@ export interface SessionMeta extends Record<string, unknown> {
  * revocation, but no storage requirement either).
  */
 export interface SessionStore {
-  create: (userId: string, meta?: SessionMeta) => Promise<{ token: string; id: string }>
+  /** Persists the full session payload (not just the sub) so `rotate` can hand it back intact on every refresh. */
+  create: (payload: SessionPayload, meta?: SessionMeta) => Promise<{ token: string; id: string }>
   /**
    * Exchanges a presented refresh token for a new one, invalidating the old
-   * one. Must return null (and the caller must fail closed) if the token is
+   * one, and returns the session payload that should be re-signed into the
+   * new access token. A real database-backed store should treat this as an
+   * opportunity to re-derive fresh claims (e.g. the user's current role)
+   * rather than blindly replaying whatever `create` was originally given —
+   * it already has to look the user up to validate the token/family anyway.
+   * Must return null (and the caller must fail closed) if the token is
    * unknown or was already rotated away — that's a replay attempt.
    */
-  rotate: (presentedToken: string, meta?: SessionMeta) => Promise<{ newToken: string; userId: string } | null>
+  rotate: (
+    presentedToken: string,
+    meta?: SessionMeta
+  ) => Promise<{ newToken: string; payload: SessionPayload } | null>
   revoke: (token: string) => Promise<void>
   /**
    * Revokes every active session for this user (e.g. "log out all devices",

@@ -196,13 +196,17 @@ production, implement the `SessionStore` interface against your own database:
 import type { SessionStore } from 'hono-auth-core'
 
 const pgSessionStore: SessionStore = {
-  async create(userId, meta) {
-    /* insert a row, return { token: randomOpaqueToken, id: rowId } */
+  async create(payload, meta) {
+    /* insert a row keyed by payload.sub, storing whatever else of `payload`
+       (role, email, ...) you want to persist; return { token: randomOpaqueToken, id: rowId } */
   },
   async rotate(presentedToken, meta) {
     /* look up presentedToken; if missing (already rotated/revoked), return null —
        that's a replay attempt and the caller fails closed. Otherwise delete the
-       old row, insert a new token for the same userId, return { newToken, userId } */
+       old row, insert a new token, and return { newToken, payload }. A real
+       store should treat this as a chance to re-derive fresh claims (e.g. the
+       user's current role) rather than just replaying what `create` stored —
+       it already has to look the user up to validate the token anyway. */
   },
   async revoke(token) {
     /* delete the row */
@@ -215,10 +219,13 @@ const pgSessionStore: SessionStore = {
 }
 ```
 
-`rotate()` only needs to return `userId` — the reissued access token after a refresh
-carries just `{ sub: userId }`, not the full `onSuccess` payload (role, email, ...). If your
-app needs those on every request, re-derive them yourself (e.g. a DB lookup keyed by
-`sub`) rather than relying on the refreshed access token to still carry them.
+`create()` receives the full session payload returned by `onSuccess` (not just the sub), and
+`rotate()` returns the full payload back — so a refreshed access token carries the same
+claims (role, email, ...) the original one did, not just `sub`. Store-backed sessions can
+also do better than "carry forward what was originally stored": since `rotate()` already
+needs to look the user up to validate the token, a real implementation can re-derive fresh
+claims from your DB right there (e.g. pick up a role change without waiting for the user to
+log out and back in).
 
 `meta` (`{ ip, userAgent }`, plus anything else you want) is passed through untouched on
 every `create`/`rotate` call — store it if you want to build an "active sessions" UI.
@@ -266,9 +273,14 @@ returning login on its own — check that yourself inside the hook (as above), t
 `onSuccess` already has to.
 
 `extraState.inviteCode` comes from whatever query params were on the original login link —
-any query string on `/auth/:provider/login` round-trips through the OAuth flow (via a
-short-lived httpOnly cookie, not the `state` URL param, so it isn't exposed to the provider
-or the browser's address bar) and is handed back to both `beforeCreateUser` and `onSuccess`:
+any query string on `/auth/:provider/login` round-trips through the OAuth flow and is handed
+back to both `beforeCreateUser` and `onSuccess`. For most providers this travels via a
+short-lived httpOnly cookie (not the `state` URL param, so it isn't exposed to the provider
+or the browser's address bar). Providers with `responseMode: "form_post"` (Apple) can't rely
+on that cookie — browsers don't attach `SameSite=Lax` cookies to the cross-origin POST Apple
+delivers the callback as — so for those, `extraState` (plus the PKCE `codeVerifier`) is
+signed into the `state` param itself instead, using your `jwt.secret`, and verified on the
+way back.
 
 ```html
 <a href="/auth/google/login?inviteCode=abc123&returnTo=/dashboard">Sign up with Google</a>

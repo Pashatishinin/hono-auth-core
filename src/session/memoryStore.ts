@@ -1,9 +1,9 @@
 import { randomString } from '../pkce.js'
-import type { SessionMeta, SessionStore } from '../types.js'
+import type { SessionMeta, SessionPayload, SessionStore } from '../types.js'
 
 interface Entry {
   id: string
-  userId: string
+  payload: SessionPayload
   meta?: SessionMeta
 }
 
@@ -17,10 +17,10 @@ export function createMemorySessionStore(): SessionStore {
   const tokens = new Map<string, Entry>()
 
   return {
-    async create(userId, meta) {
+    async create(payload, meta) {
       const token = randomString(48)
       const id = randomString(16)
-      tokens.set(token, { id, userId, meta })
+      tokens.set(token, { id, payload, meta })
       return { token, id }
     },
 
@@ -30,8 +30,8 @@ export function createMemorySessionStore(): SessionStore {
 
       tokens.delete(presentedToken)
       const newToken = randomString(48)
-      tokens.set(newToken, { id: entry.id, userId: entry.userId, meta })
-      return { newToken, userId: entry.userId }
+      tokens.set(newToken, { id: entry.id, payload: entry.payload, meta })
+      return { newToken, payload: entry.payload }
     },
 
     async revoke(token) {
@@ -40,7 +40,7 @@ export function createMemorySessionStore(): SessionStore {
 
     async revokeAll(userId) {
       for (const [token, entry] of tokens) {
-        if (entry.userId === userId) tokens.delete(token)
+        if (entry.payload.sub === userId) tokens.delete(token)
       }
     },
   }

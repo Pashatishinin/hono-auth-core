@@ -2,14 +2,18 @@ import type { OAuthProfile, OAuthProvider } from '../types.js'
 import { createCodeChallenge, randomString } from '../pkce.js'
 import { verifyIdToken } from './idToken.js'
 
-export interface AuthorizationRequest {
-  url: string
-  state: string
-  codeVerifier?: string
+export interface Pkce {
+  codeVerifier: string
+  codeChallenge: string
 }
 
-export async function buildAuthorizationUrl(provider: OAuthProvider): Promise<AuthorizationRequest> {
-  const state = randomString(24)
+export async function generatePkce(): Promise<Pkce> {
+  const codeVerifier = randomString(48)
+  const codeChallenge = await createCodeChallenge(codeVerifier)
+  return { codeVerifier, codeChallenge }
+}
+
+export function buildAuthorizationUrl(provider: OAuthProvider, state: string, codeChallenge?: string): string {
   const url = new URL(provider.authorizationUrl)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('client_id', provider.clientId)
@@ -21,15 +25,12 @@ export async function buildAuthorizationUrl(provider: OAuthProvider): Promise<Au
     url.searchParams.set(key, value)
   }
 
-  let codeVerifier: string | undefined
-  if (provider.pkce !== false) {
-    codeVerifier = randomString(48)
-    const challenge = await createCodeChallenge(codeVerifier)
-    url.searchParams.set('code_challenge', challenge)
+  if (codeChallenge) {
+    url.searchParams.set('code_challenge', codeChallenge)
     url.searchParams.set('code_challenge_method', 'S256')
   }
 
-  return { url: url.toString(), state, codeVerifier }
+  return url.toString()
 }
 
 interface TokenResponse {

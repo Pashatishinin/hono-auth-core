@@ -1,9 +1,11 @@
 import { Hono } from 'hono'
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import type { Context, MiddlewareHandler } from 'hono'
-import { buildAuthorizationUrl, exchangeCodeForToken, resolveProfile } from './oauth/client.js'
-import { signSessionToken, verifySessionToken } from './jwt.js'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { clearSessionCookies, getAccessTokenCookie, getRefreshTokenCookie, setSessionCookies } from './cookies.js'
+import { signSessionToken, verifySessionToken } from './jwt.js'
+import { buildAuthorizationUrl, exchangeCodeForToken, generatePkce, resolveProfile } from './oauth/client.js'
+import { signOAuthState, verifyOAuthState } from './oauth/state.js'
+import { randomString } from './pkce.js'
 import type { AuthConfig, SessionMeta, SessionPayload } from './types.js'
 
 const OAUTH_STATE_COOKIE_PREFIX = 'auth_oauth_state_'
@@ -70,17 +72,32 @@ export function createAuth<TUser extends SessionPayload = SessionPayload>(
     if (!provider) return c.json({ error: 'unknown_provider' }, 404)
 
     const extraState = c.req.query()
-    const { url, state, codeVerifier } = await buildAuthorizationUrl(provider)
+    const pkce = provider.pkce !== false ? await generatePkce() : undefined
 
-    const cookiePayload: StateCookiePayload = { state, codeVerifier, extraState }
-    setCookie(c, OAUTH_STATE_COOKIE_PREFIX + provider.name, JSON.stringify(cookiePayload), {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Lax',
-      path: '/',
-      maxAge: OAUTH_STATE_TTL_SECONDS,
-    })
+    let state: string
 
+    if (provider.responseMode === 'form_post') {
+      // Providers that POST the callback do it cross-origin (e.g.
+      // appleid.apple.com -> the app's own domain). Browsers don't attach
+      // SameSite=Lax cookies to cross-site POSTs, so the usual
+      // cookie-holds-the-expected-state approach never round-trips here.
+      // Instead, the state param itself is a signed JWT carrying
+      // codeVerifier + extraState — its signature is the CSRF defense, no
+      // cookie required.
+      state = await signOAuthState({ codeVerifier: pkce?.codeVerifier, extraState }, config.jwt)
+    } else {
+      state = randomString(24)
+      const cookiePayload: StateCookiePayload = { state, codeVerifier: pkce?.codeVerifier, extraState }
+      setCookie(c, OAUTH_STATE_COOKIE_PREFIX + provider.name, JSON.stringify(cookiePayload), {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+        path: '/',
+        maxAge: OAUTH_STATE_TTL_SECONDS,
+      })
+    }
+
+    const url = buildAuthorizationUrl(provider, state, pkce?.codeChallenge)
     return c.redirect(url)
   })
 
@@ -89,31 +106,44 @@ export function createAuth<TUser extends SessionPayload = SessionPayload>(
     const provider = providers.get(providerName)
     if (!provider) return c.json({ error: 'unknown_provider' }, 404)
 
+    const isFormPost = provider.responseMode === 'form_post'
     const stateCookieName = OAUTH_STATE_COOKIE_PREFIX + provider.name
-    const stateCookieRaw = getCookie(c, stateCookieName)
-    deleteCookie(c, stateCookieName, { path: '/' })
+    const stateCookieRaw = isFormPost ? undefined : getCookie(c, stateCookieName)
+    if (!isFormPost) deleteCookie(c, stateCookieName, { path: '/' })
 
     try {
       const params = await readCallbackParams(c)
       const { code, state: returnedState, error: errorParam, user: appleUser } = params
 
       if (errorParam) throw new Error(`oauth_denied: ${errorParam}`)
-      if (!code || !returnedState || !stateCookieRaw) throw new Error('missing_oauth_params')
+      if (!code || !returnedState) throw new Error('missing_oauth_params')
 
-      const { state: expectedState, codeVerifier, extraState } = JSON.parse(stateCookieRaw) as StateCookiePayload
-      if (returnedState !== expectedState) throw new Error('state_mismatch')
+      let codeVerifier: string | undefined
+      let extraState: Record<string, string>
+
+      if (isFormPost) {
+        const statePayload = await verifyOAuthState(returnedState, config.jwt)
+        codeVerifier = statePayload.codeVerifier
+        extraState = statePayload.extraState
+      } else {
+        if (!stateCookieRaw) throw new Error('missing_oauth_params')
+        const parsed = JSON.parse(stateCookieRaw) as StateCookiePayload
+        if (returnedState !== parsed.state) throw new Error('state_mismatch')
+        codeVerifier = parsed.codeVerifier
+        extraState = parsed.extraState
+      }
 
       const tokenResponse = await exchangeCodeForToken(provider, code, codeVerifier)
       const profile = await resolveProfile(provider, tokenResponse, appleUser ? { user: appleUser } : undefined)
 
       if (config.beforeCreateUser) {
-        await config.beforeCreateUser(profile, provider.name, extraState ?? {})
+        await config.beforeCreateUser(profile, provider.name, extraState)
       }
-      const userPayload = await config.onSuccess(profile, provider.name, extraState ?? {})
+      const userPayload = await config.onSuccess(profile, provider.name, extraState)
 
       const accessToken = await signSessionToken(userPayload, config.jwt, accessTtl)
       const refreshToken = config.sessionStore
-        ? (await config.sessionStore.create(userPayload.sub, sessionMetaFromContext(c))).token
+        ? (await config.sessionStore.create(userPayload, sessionMetaFromContext(c))).token
         : await signSessionToken(userPayload, config.jwt, refreshTtl)
 
       setSessionCookies(c, { accessToken, refreshToken }, config.cookies)
@@ -140,12 +170,7 @@ export function createAuth<TUser extends SessionPayload = SessionPayload>(
         return c.json({ error: 'invalid_refresh_token' }, 401)
       }
 
-      // Store-backed refresh only remembers the userId, so the reissued
-      // access token carries just `sub` — not any extra claims (role, email,
-      // ...) that onSuccess originally embedded. Re-derive those yourself
-      // (e.g. a DB lookup) if you need them on every request; getSession()
-      // still reads whatever is in the current access token.
-      const accessToken = await signSessionToken({ sub: rotated.userId } as TUser, config.jwt, accessTtl)
+      const accessToken = await signSessionToken(rotated.payload, config.jwt, accessTtl)
       setSessionCookies(c, { accessToken, refreshToken: rotated.newToken }, config.cookies)
       return c.json({ ok: true })
     }
