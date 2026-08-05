@@ -16,6 +16,13 @@ interface Auth<TUser extends SessionPayload> {
   middleware: () => MiddlewareHandler
   /** Reads and verifies the session without failing the request; returns null if absent/invalid. */
   getSession: (c: Context) => Promise<TUser | null>
+  /**
+   * Revokes every active session for this user ("log out all devices", or
+   * after a password/email change). Requires `sessionStore` to be
+   * configured — throws otherwise, since stateless JWT refresh tokens can't
+   * be revoked early.
+   */
+  revokeAllSessions: (userId: string) => Promise<void>
 }
 
 declare module 'hono' {
@@ -182,5 +189,14 @@ export function createAuth<TUser extends SessionPayload = SessionPayload>(
     }
   }
 
-  return { routes, middleware, getSession }
+  async function revokeAllSessions(userId: string): Promise<void> {
+    if (!config.sessionStore) {
+      throw new Error(
+        'revokeAllSessions() requires a sessionStore — stateless JWT refresh tokens cannot be revoked early'
+      )
+    }
+    await config.sessionStore.revokeAll(userId)
+  }
+
+  return { routes, middleware, getSession, revokeAllSessions }
 }

@@ -37,5 +37,11 @@ export function createMemorySessionStore(): SessionStore {
     async revoke(token) {
       tokens.delete(token)
     },
+
+    async revokeAll(userId) {
+      for (const [token, entry] of tokens) {
+        if (entry.userId === userId) tokens.delete(token)
+      }
+    },
   }
 }

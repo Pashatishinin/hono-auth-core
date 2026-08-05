@@ -87,6 +87,14 @@ export interface SessionStore {
    */
   rotate: (presentedToken: string, meta?: SessionMeta) => Promise<{ newToken: string; userId: string } | null>
   revoke: (token: string) => Promise<void>
+  /**
+   * Revokes every active session for this user (e.g. "log out all devices",
+   * or after a password/email change) — not just the one presented token.
+   * If your storage groups tokens into rotation "families" rather than one
+   * row per user, revoke every family belonging to this userId; the only
+   * contract that matters is userId → every session dead.
+   */
+  revokeAll: (userId: string) => Promise<void>
 }
 
 export interface AuthConfig<TUser extends SessionPayload = SessionPayload> {

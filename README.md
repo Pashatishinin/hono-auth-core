@@ -207,6 +207,11 @@ const pgSessionStore: SessionStore = {
   async revoke(token) {
     /* delete the row */
   },
+  async revokeAll(userId) {
+    /* delete every row (or rotation "family") belonging to this userId —
+       the only contract that matters is userId → every session dead,
+       regardless of how you model sessions internally */
+  },
 }
 ```
 
@@ -219,6 +224,17 @@ app needs those on every request, re-derive them yourself (e.g. a DB lookup keye
 every `create`/`rotate` call — store it if you want to build an "active sessions" UI.
 `/auth/logout` calls `sessionStore.revoke()` on the current refresh token automatically when
 a store is configured.
+
+To log a user out of every device at once (e.g. after a password change, or a suspected
+account compromise), call `auth.revokeAllSessions(userId)` — it delegates to
+`sessionStore.revokeAll()` so your app never has to reach into the store directly:
+
+```ts
+await auth.revokeAllSessions(userId)
+```
+
+This throws if no `sessionStore` is configured, since stateless JWT refresh tokens can't be
+revoked early.
 
 ### Gating signup (invites, waitlists, etc.)
 
