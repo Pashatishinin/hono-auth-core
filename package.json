@@ -1,6 +1,6 @@
 {
   "name": "hono-auth-core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OAuth2 (Google + generic) authentication core for Hono, with JWT session cookies",
   "license": "MIT",
   "author": "Pavlo Tishynin",
